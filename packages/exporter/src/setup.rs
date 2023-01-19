@@ -37,7 +37,7 @@ async fn get_info(path: &Path) -> Result<Info, Box<dyn Error>> {
 
 fn get_download_url(buid_type: &str, version: &str, username: &str, token: &str) -> String {
     format!(
-        "https://www.factorio.com/get-download/{}/{}/linux64?username={}&token={}",
+        "https://www.factorio.com/get-download/{}/{}/win64?username={}&token={}",
         version, buid_type, username, token
     )
 }
@@ -148,7 +148,7 @@ pub async fn extract(data_dir: &Path, factorio_data: &Path) -> Result<(), Box<dy
     let mod_dir = data_dir.join("factorio/mods/export-data");
     let scenario_dir = mod_dir.join("scenarios/export-data");
     let extracted_data_path = data_dir.join("factorio/script-output/data.json");
-    let factorio_executable = data_dir.join("factorio/bin/x64/factorio");
+    let factorio_executable = data_dir.join("factorio\\bin\\x64\\factorio");
 
     let info = include_str!("export-data/info.json");
     let script = include_str!("export-data/control.lua");
@@ -161,13 +161,34 @@ pub async fn extract(data_dir: &Path, factorio_data: &Path) -> Result<(), Box<dy
     tokio::fs::write(mod_dir.join("data-final-fixes.lua"), data).await?;
     tokio::fs::write(scenario_dir.join("control.lua"), script).await?;
 
-    println!("Generating defines.lua");
+    let path = env::current_dir()?;
+    println!("The current directory is {}", path.display());
 
-    Command::new(factorio_executable)
+    println!("Generating defines.lua");
+    println!("Running Factorio Export");
+    let go: String = factorio_executable
+        .clone()
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    println!("{}", go);
+    //    println!(program.into_os_string().into_string().unwrap());
+    let go2 = path
+        .join(go)
+        .clone()
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    println!("{}", go2);
+
+    Command::new(path.join(factorio_executable))
+        .env("PATH", path)
         .args(&["--start-server-load-scenario", "export-data/export-data"])
-        .stdout(std::process::Stdio::null())
+        // .stdout(std::process::Stdio::null())
         .spawn()?
         .await?;
+
+    println!("Factorio Started, reading data");
 
     let content = tokio::fs::read_to_string(&extracted_data_path).await?;
     tokio::fs::create_dir_all(&output_dir).await?;
@@ -337,7 +358,7 @@ pub async fn download_factorio(
             mpb.add(ProgressBar::new(0)),
         );
         let d1 = download(
-            get_download_url("headless", factorio_version, &username, &token),
+            get_download_url("alpha", factorio_version, &username, &token),
             data_dir,
             &["factorio/bin/*", "factorio/config-path.cfg"],
             mpb.add(ProgressBar::new(0)),
@@ -366,12 +387,19 @@ where
     S: AsRef<str>,
 {
     let client = reqwest::Client::new();
+    println!("URL: {}", url);
     let res = client.get(&url).send().await?;
 
     if !res.status().is_success() {
-        panic!("Status code was not successful");
+        panic!(
+            "Status code was not successful: {}",
+            res.status().to_string()
+        );
+    } else {
+        println!("Status code was successful: {}", res.status().to_string());
     }
 
+    println!("content_length: {}", res.content_length().unwrap_or(45));
     if let Some(content_length) = res.content_length() {
         pb.set_length(content_length);
         pb.set_style(
@@ -383,11 +411,13 @@ where
         pb.set_style(ProgressStyle::default_spinner());
     }
 
+    println!("TryStreamExt");
     use futures::stream::TryStreamExt;
     let stream = res
         .bytes_stream()
         .map_err(|e| futures::io::Error::new(futures::io::ErrorKind::Other, e));
 
+    println!("InspectOk");
     let stream = stream.inspect_ok(|chunk| {
         pb.inc(chunk.len() as u64);
     });
@@ -404,12 +434,27 @@ where
     let ar = async_tar::Archive::new(stream_reader);
     let mut entries = ar.entries()?;
     use futures::stream::StreamExt;
+    println!("awaiting?");
     while let Some(Ok(mut file)) = entries.next().await {
         if matcher.is_match(file.path()?.to_path_buf()) {
+            // println!(
+            //     "filter {}, file {}, out_dir {}",
+            //     "filter",
+            //     file.path()?
+            //         .to_path_buf()
+            //         .as_os_str()
+            //         .to_str()
+            //         .unwrap_or(""),
+            //     out_dir.as_os_str().to_str().unwrap_or("")
+            // );
+            println!("Unpack?");
             file.unpack_in(out_dir).await?;
+        } else {
+            println!("Unpack!");
         }
     }
 
+    println!("pb.finish()");
     pb.finish();
 
     Ok(())

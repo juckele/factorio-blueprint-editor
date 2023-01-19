@@ -9,8 +9,8 @@ extern crate lazy_static;
 static FACTORIO_VERSION: &str = "1.1.41";
 
 lazy_static! {
-    static ref DATA_DIR: PathBuf = PathBuf::from("./data");
-    static ref FACTORIO_DATA: PathBuf = DATA_DIR.join("factorio/data");
+    static ref DATA_DIR: PathBuf = PathBuf::from("data");
+    static ref FACTORIO_DATA: PathBuf = DATA_DIR.join("factorio\\data");
 }
 
 #[actix_rt::main]
